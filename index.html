@@ -285,7 +285,7 @@
           <p class="score-value" id="score">0</p>
         </div>
         
-        <div class="timer" id="timer">30s</div>
+        <div class="timer" id="timer">∞</div>
         
         <div class="status" id="status">準備中...</div>
         
@@ -326,13 +326,11 @@
     const modelBadge = document.getElementById('model-badge');
 
     const ITEMS = ['🍖', '🦴', '🧀', '🥩', '🍎', '🥕', '🎾', '🦴', '🥓'];
-    const GAME_DURATION = 30000;
 
     let faceMesh = null;
     let cameraReady = false;
     let gameRunning = false;
     let score = 0;
-    let gameStartTime = null;
     let items = [];
     let gazePos = { x: 0, y: 0 };
     let gazingItemIndex = -1;
@@ -541,6 +539,7 @@
           el.classList.remove('selected');
         }
         items[idx].gazingTime = 0;
+        items[idx].selected = false;
       }, 600);
     }
 
@@ -568,41 +567,27 @@
 
     function startGame() {
       gameRunning = true;
-      gameStartTime = Date.now();
       score = 0;
       scoreEl.textContent = score;
       createItems();
       startBtn.disabled = true;
-      statusEl.textContent = 'ゲーム中！';
-      gameLoop();
+      statusEl.textContent = 'ゲーム中！無制限にアイテムを取ろう！';
     }
 
     function gameLoop() {
       if (!gameRunning) return;
 
-      const elapsed = Date.now() - gameStartTime;
-      const remaining = Math.max(0, GAME_DURATION - elapsed);
-      const seconds = Math.ceil(remaining / 1000);
-      timerEl.textContent = seconds + 's';
+      // タイマーを無制限表示
+      timerEl.textContent = '∞';
 
-      if (remaining <= 0) {
-        endGame();
-      } else {
-        requestAnimationFrame(gameLoop);
-      }
-    }
-
-    function endGame() {
-      gameRunning = false;
-      startBtn.disabled = false;
-      statusEl.textContent = `ゲーム終了！スコア: ${score}`;
+      requestAnimationFrame(gameLoop);
     }
 
     function resetGame() {
       gameRunning = false;
       score = 0;
       scoreEl.textContent = score;
-      timerEl.textContent = '30s';
+      timerEl.textContent = '∞';
       itemsGrid.innerHTML = '';
       statusEl.textContent = 'リセット完了！';
       startBtn.disabled = false;
