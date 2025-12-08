@@ -326,6 +326,7 @@
     const modelBadge = document.getElementById('model-badge');
 
     const ITEMS = ['🍖', '🦴', '🧀', '🥩', '🍎', '🥕', '🎾', '🦴', '🥓'];
+    const ITEM_NAMES = ['meat', 'bone', 'cheese', 'steak', 'apple', 'carrot', 'ball', 'bone', 'bacon'];
 
     let faceMesh = null;
     let cameraReady = false;
@@ -334,12 +335,10 @@
     let items = [];
     let gazePos = { x: 0, y: 0 };
     let gazingItemIndex = -1;
-    let gazingDuration = 0;
-    const GAZE_THRESHOLD = 500; // ミリ秒
+    const GAZE_THRESHOLD = 500;
 
     async function initFaceMesh() {
       try {
-        // FaceMeshの読み込み完了を待つ
         await new Promise((resolve) => {
           const checkFaceMesh = setInterval(() => {
             if (typeof FaceMesh !== 'undefined') {
@@ -378,11 +377,15 @@
         });
         videoEl.srcObject = stream;
         await videoEl.play();
+        
+        await new Promise(resolve => {
+          videoEl.onloadedmetadata = resolve;
+        });
+        
         cameraReady = true;
         updateBadge(camBadge, 'カメラOK', true);
         statusEl.textContent = 'ゲーム開始準備完了！';
         
-        // FaceMeshが初期化されるまで待つ
         await new Promise((resolve) => {
           const checkMesh = setInterval(() => {
             if (faceMesh) {
@@ -392,7 +395,6 @@
           }, 100);
         });
         
-        // Camera setup for FaceMesh
         overlay.width = gameArea.offsetWidth;
         overlay.height = gameArea.offsetHeight;
         
@@ -402,8 +404,8 @@
               await faceMesh.send({ image: videoEl });
             }
           },
-          width: overlay.width,
-          height: overlay.height
+          width: videoEl.videoWidth,
+          height: videoEl.videoHeight
         });
         camera.start();
       } catch (e) {
@@ -423,35 +425,18 @@
       }
 
       const landmarks = results.multiFaceLandmarks[0];
-      
-      // 瞳孔のランドマーク
-      // 右目: 414, 左目: 189
       const rightPupil = landmarks[414];
       const leftPupil = landmarks[189];
       
-      // 目の端のランドマーク（校正用）
-      const rightEyeInner = landmarks[133];
-      const rightEyeOuter = landmarks[33];
-      const leftEyeInner = landmarks[362];
-      const leftEyeOuter = landmarks[263];
-      
-      // 瞳孔位置の平均を計算
       const pupilX = (rightPupil.x + leftPupil.x) / 2;
       const pupilY = (rightPupil.y + leftPupil.y) / 2;
       
-      // 目の開き具合を考慮
-      const rightEyeWidth = Math.abs(rightEyeOuter.x - rightEyeInner.x);
-      const leftEyeWidth = Math.abs(leftEyeOuter.x - leftEyeInner.x);
-      const avgEyeWidth = (rightEyeWidth + leftEyeWidth) / 2;
-      
-      // スクリーン座標に変換（左右反転）
       const gazeScreenX = (1 - pupilX) * overlay.width;
       const gazeScreenY = pupilY * overlay.height;
       
       gazePos.x = gazeScreenX;
       gazePos.y = gazeScreenY;
       
-      // 視線インジケータを更新
       gazeIndicator.style.left = gazeScreenX + 'px';
       gazeIndicator.style.top = gazeScreenY + 'px';
       
@@ -486,8 +471,6 @@
       const relativeGazeX = gazePos.x;
       const relativeGazeY = gazePos.y;
 
-      let newGazingIndex = -1;
-
       items.forEach((item, idx) => {
         const el = document.getElementById('item-' + idx);
         const rect = el.getBoundingClientRect();
@@ -505,8 +488,7 @@
           relativeGazeY <= relativeRect.bottom;
 
         if (isGazing) {
-          newGazingIndex = idx;
-          item.gazingTime += 16; // ~60fps
+          item.gazingTime += 16;
 
           if (item.gazingTime >= GAZE_THRESHOLD && !item.selected) {
             selectItem(idx);
@@ -519,8 +501,6 @@
 
         el.classList.toggle('gazing', isGazing);
       });
-
-      gazingItemIndex = newGazingIndex;
     }
 
     function selectItem(idx) {
@@ -530,10 +510,9 @@
       const el = document.getElementById('item-' + idx);
       el.classList.add('selected');
       
-      // 効果音
       playChime();
+      speakItemName(idx);
       
-      // 3秒後にリセット
       setTimeout(() => {
         if (el) {
           el.classList.remove('selected');
@@ -545,24 +524,56 @@
 
     function playChime() {
       const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      const notes = [523.25, 659.25, 783.99];
+      const notes = [
+        { freq: 523.25, duration: 0.15 },
+        { freq: 659.25, duration: 0.15 },
+        { freq: 783.99, duration: 0.15 },
+        { freq: 1046.5, duration: 0.3 }
+      ];
       
-      notes.forEach((freq, i) => {
+      let startTime = audioContext.currentTime;
+      
+      notes.forEach((note) => {
         const osc = audioContext.createOscillator();
         const gain = audioContext.createGain();
         osc.connect(gain);
         gain.connect(audioContext.destination);
         
-        osc.frequency.value = freq;
+        osc.frequency.value = note.freq;
         osc.type = 'sine';
         
-        const startTime = audioContext.currentTime + (i * 0.1);
-        gain.gain.setValueAtTime(0.2, startTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, startTime + 0.2);
+        gain.gain.setValueAtTime(0.3, startTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, startTime + note.duration);
         
         osc.start(startTime);
-        osc.stop(startTime + 0.2);
+        osc.stop(startTime + note.duration);
+        
+        startTime += note.duration;
       });
+      
+      const bassosc = audioContext.createOscillator();
+      const bassgain = audioContext.createGain();
+      bassosc.connect(bassgain);
+      bassgain.connect(audioContext.destination);
+      
+      bassosc.frequency.value = 261.63;
+      bassosc.type = 'sine';
+      bassgain.gain.setValueAtTime(0.2, audioContext.currentTime);
+      bassgain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.6);
+      bassosc.start(audioContext.currentTime);
+      bassosc.stop(audioContext.currentTime + 0.6);
+    }
+
+    function speakItemName(itemIndex) {
+      const itemName = ITEM_NAMES[itemIndex];
+      const utterance = new SpeechSynthesisUtterance(itemName);
+      utterance.lang = 'en-US';
+      utterance.rate = 1.0;
+      utterance.pitch = 1.2;
+      utterance.volume = 1.0;
+      
+      speechSynthesis.cancel();
+      speechSynthesis.speak(utterance);
     }
 
     function startGame() {
@@ -572,14 +583,12 @@
       createItems();
       startBtn.disabled = true;
       statusEl.textContent = 'ゲーム中！無制限にアイテムを取ろう！';
+      gameLoop();
     }
 
     function gameLoop() {
       if (!gameRunning) return;
-
-      // タイマーを無制限表示
       timerEl.textContent = '∞';
-
       requestAnimationFrame(gameLoop);
     }
 
@@ -594,6 +603,7 @@
     }
 
     startBtn.addEventListener('click', async () => {
+      console.log('START clicked, cameraReady:', cameraReady);
       if (!cameraReady) {
         startBtn.textContent = '準備中...';
         startBtn.disabled = true;
@@ -601,14 +611,17 @@
         startBtn.textContent = 'ゲーム開始';
         startBtn.disabled = false;
       } else {
+        console.log('Starting game');
         startGame();
       }
     });
 
-    resetBtn.addEventListener('click', resetGame);
+    resetBtn.addEventListener('click', () => {
+      console.log('RESET clicked');
+      resetGame();
+    });
 
-    // 初期化
-    console.log('Initializing eye tracking game...');
+    console.log('Game initialized');
     initFaceMesh();
   </script>
 </body>
