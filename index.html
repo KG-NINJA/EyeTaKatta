@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>視線トラッキング - アイテム選択</title>
+  <style>
+    :root {
+      --bg: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      --panel: rgba(255, 255, 255, 0.95);
+      --text: #333;
+      --accent: #ff6b9d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Noto Sans JP', system-ui, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .app {
+      width: min(1000px, 100%);
+      background: var(--panel);
+      border-radius: 20px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      overflow: hidden;
+    }
+    header {
+      padding: 20px;
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: white;
+      text-align: center;
+    }
+    header h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+    }
+    header p {
+      margin: 0;
+      font-size: 14px;
+      opacity: 0.9;
+    }
+    .content {
+      padding: 20px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 20px;
+    }
+    .game-area {
+      position: relative;
+      border: 3px solid #667eea;
+      border-radius: 16px;
+      background: #f9f9f9;
+      overflow: hidden;
+      min-height: 400px;
+      isolation: isolate;
+    }
+    .camera-container {
+      position: absolute;
+      inset: 0;
+      opacity: 0.2;
+    }
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .overlay-canvas {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+    .items-grid {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      padding: 20px;
+    }
+    .item {
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      border: 3px solid #667eea;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 40px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      position: relative;
+      overflow: hidden;
+    }
+    .item::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: rgba(255, 255, 255, 0.2);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    .item:hover {
+      transform: scale(1.05);
+      box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
+    }
+    .item.gazing {
+      border-color: #ff6b9d;
+      box-shadow: 0 0 20px rgba(255, 107, 157, 0.6), inset 0 0 10px rgba(255, 107, 157, 0.3);
+      transform: scale(1.08);
+    }
+    .item.gazing::before {
+      opacity: 1;
+      background: rgba(255, 107, 157, 0.3);
+    }
+    .item.selected {
+      background: #4ade80;
+      border-color: #4ade80;
+      animation: select-pulse 0.6s ease;
+    }
+    @keyframes select-pulse {
+      0% { transform: scale(1.08); }
+      50% { transform: scale(1.15); }
+      100% { transform: scale(1.08); }
+    }
+    .gaze-indicator {
+      position: absolute;
+      width: 30px;
+      height: 30px;
+      border: 3px solid #ff6b9d;
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 100;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 0 10px rgba(255, 107, 157, 0.6);
+    }
+    .gaze-indicator::after {
+      content: '';
+      position: absolute;
+      width: 6px;
+      height: 6px;
+      background: #ff6b9d;
+      border-radius: 50%;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-width: 200px;
+    }
+    .score-box {
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: white;
+      padding: 20px;
+      border-radius: 16px;
+      text-align: center;
+    }
+    .score-label {
+      font-size: 14px;
+      opacity: 0.9;
+      margin-bottom: 8px;
+    }
+    .score-value {
+      font-size: 48px;
+      font-weight: 700;
+      margin: 0;
+    }
+    .timer {
+      font-size: 28px;
+      font-weight: 700;
+      text-align: center;
+      color: #667eea;
+    }
+    .status {
+      padding: 12px;
+      background: #f0f0f0;
+      border-radius: 12px;
+      font-size: 14px;
+      text-align: center;
+      color: #666;
+      min-height: 50px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .controls {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    button {
+      appearance: none;
+      border: none;
+      border-radius: 12px;
+      padding: 12px 16px;
+      background: #667eea;
+      color: white;
+      font-weight: 700;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    button:hover {
+      background: #5568d3;
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    button.secondary {
+      background: #e5e7eb;
+      color: #667eea;
+    }
+    button.secondary:hover {
+      background: #d1d5db;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 20px;
+      background: white;
+      border: 2px solid #667eea;
+      color: #667eea;
+      font-weight: 600;
+      font-size: 12px;
+      text-align: center;
+      justify-content: center;
+    }
+    .badge.active {
+      background: #667eea;
+      color: white;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ff6b9d;
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    @media (max-width: 800px) {
+      .content {
+        grid-template-columns: 1fr;
+      }
+      .sidebar {
+        min-width: auto;
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header>
+      <h1>👁️ 視線トラッキング - アイテム選択</h1>
+      <p>目を動かしてアイテムを選択しよう！</p>
+    </header>
+    <div class="content">
+      <div class="game-area" id="game-area">
+        <div class="camera-container">
+          <video id="video" playsinline muted></video>
+        </div>
+        <canvas id="overlay" class="overlay-canvas"></canvas>
+        <div class="items-grid" id="items-grid"></div>
+        <div class="gaze-indicator" id="gaze-indicator"></div>
+      </div>
+      
+      <aside class="sidebar">
+        <div class="score-box">
+          <div class="score-label">スコア</div>
+          <p class="score-value" id="score">0</p>
+        </div>
+        
+        <div class="timer" id="timer">30s</div>
+        
+        <div class="status" id="status">準備中...</div>
+        
+        <div class="badge" id="cam-badge">
+          <span class="dot"></span>
+          <span>待機中</span>
+        </div>
+        <div class="badge" id="model-badge">
+          <span class="dot"></span>
+          <span>読込中</span>
+        </div>
+        
+        <div class="controls">
+          <button id="start-btn">ゲーム開始</button>
+          <button id="reset-btn" class="secondary">リセット</button>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <script async src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script async src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+  <script async src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+
+  <script>
+    const videoEl = document.getElementById('video');
+    const overlay = document.getElementById('overlay');
+    const ctx = overlay.getContext('2d');
+    const gameArea = document.getElementById('game-area');
+    const itemsGrid = document.getElementById('items-grid');
+    const gazeIndicator = document.getElementById('gaze-indicator');
+    const scoreEl = document.getElementById('score');
+    const timerEl = document.getElementById('timer');
+    const statusEl = document.getElementById('status');
+    const startBtn = document.getElementById('start-btn');
+    const resetBtn = document.getElementById('reset-btn');
+    const camBadge = document.getElementById('cam-badge');
+    const modelBadge = document.getElementById('model-badge');
+
+    const ITEMS = ['🍖', '🦴', '🧀', '🥩', '🍎', '🥕', '🎾', '🦴', '🥓'];
+    const GAME_DURATION = 30000;
+
+    let faceMesh = null;
+    let cameraReady = false;
+    let gameRunning = false;
+    let score = 0;
+    let gameStartTime = null;
+    let items = [];
+    let gazePos = { x: 0, y: 0 };
+    let gazingItemIndex = -1;
+    let gazingDuration = 0;
+    const GAZE_THRESHOLD = 500; // ミリ秒
+
+    async function initFaceMesh() {
+      try {
+        // FaceMeshの読み込み完了を待つ
+        await new Promise((resolve) => {
+          const checkFaceMesh = setInterval(() => {
+            if (typeof FaceMesh !== 'undefined') {
+              clearInterval(checkFaceMesh);
+              resolve();
+            }
+          }, 100);
+        });
+
+        faceMesh = new FaceMesh({
+          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+        });
+
+        faceMesh.setOptions({
+          maxNumFaces: 1,
+          refineLandmarks: true,
+          minDetectionConfidence: 0.5,
+          minTrackingConfidence: 0.5
+        });
+
+        faceMesh.onResults(onFaceMeshResults);
+        updateBadge(modelBadge, '読込完了', true);
+        statusEl.textContent = 'STARTボタンを押してね！';
+      } catch (e) {
+        console.error('FaceMesh init error:', e);
+        statusEl.textContent = 'エラー: ' + e.message;
+      }
+    }
+
+    async function initCamera() {
+      if (cameraReady) return;
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user' },
+          audio: false
+        });
+        videoEl.srcObject = stream;
+        await videoEl.play();
+        cameraReady = true;
+        updateBadge(camBadge, 'カメラOK', true);
+        statusEl.textContent = 'ゲーム開始準備完了！';
+        
+        // FaceMeshが初期化されるまで待つ
+        await new Promise((resolve) => {
+          const checkMesh = setInterval(() => {
+            if (faceMesh) {
+              clearInterval(checkMesh);
+              resolve();
+            }
+          }, 100);
+        });
+        
+        // Camera setup for FaceMesh
+        overlay.width = gameArea.offsetWidth;
+        overlay.height = gameArea.offsetHeight;
+        
+        const camera = new Camera(videoEl, {
+          onFrame: async () => {
+            if (faceMesh) {
+              await faceMesh.send({ image: videoEl });
+            }
+          },
+          width: overlay.width,
+          height: overlay.height
+        });
+        camera.start();
+      } catch (e) {
+        console.error('Camera error:', e);
+        statusEl.textContent = 'カメラが使用できません';
+      }
+    }
+
+    function updateBadge(badge, text, active = false) {
+      badge.classList.toggle('active', active);
+      badge.querySelector('span:not(.dot)').textContent = text;
+    }
+
+    function onFaceMeshResults(results) {
+      if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
+        return;
+      }
+
+      const landmarks = results.multiFaceLandmarks[0];
+      
+      // 瞳孔のランドマーク
+      // 右目: 414, 左目: 189
+      const rightPupil = landmarks[414];
+      const leftPupil = landmarks[189];
+      
+      // 目の端のランドマーク（校正用）
+      const rightEyeInner = landmarks[133];
+      const rightEyeOuter = landmarks[33];
+      const leftEyeInner = landmarks[362];
+      const leftEyeOuter = landmarks[263];
+      
+      // 瞳孔位置の平均を計算
+      const pupilX = (rightPupil.x + leftPupil.x) / 2;
+      const pupilY = (rightPupil.y + leftPupil.y) / 2;
+      
+      // 目の開き具合を考慮
+      const rightEyeWidth = Math.abs(rightEyeOuter.x - rightEyeInner.x);
+      const leftEyeWidth = Math.abs(leftEyeOuter.x - leftEyeInner.x);
+      const avgEyeWidth = (rightEyeWidth + leftEyeWidth) / 2;
+      
+      // スクリーン座標に変換（左右反転）
+      const gazeScreenX = (1 - pupilX) * overlay.width;
+      const gazeScreenY = pupilY * overlay.height;
+      
+      gazePos.x = gazeScreenX;
+      gazePos.y = gazeScreenY;
+      
+      // 視線インジケータを更新
+      gazeIndicator.style.left = gazeScreenX + 'px';
+      gazeIndicator.style.top = gazeScreenY + 'px';
+      
+      if (gameRunning) {
+        checkGazeCollision();
+      }
+    }
+
+    function createItems() {
+      items = [];
+      itemsGrid.innerHTML = '';
+
+      ITEMS.forEach((emoji, idx) => {
+        const item = {
+          index: idx,
+          emoji: emoji,
+          gazingTime: 0,
+          selected: false
+        };
+        items.push(item);
+
+        const el = document.createElement('div');
+        el.className = 'item';
+        el.textContent = emoji;
+        el.id = 'item-' + idx;
+        itemsGrid.appendChild(el);
+      });
+    }
+
+    function checkGazeCollision() {
+      const gameRect = gameArea.getBoundingClientRect();
+      const relativeGazeX = gazePos.x;
+      const relativeGazeY = gazePos.y;
+
+      let newGazingIndex = -1;
+
+      items.forEach((item, idx) => {
+        const el = document.getElementById('item-' + idx);
+        const rect = el.getBoundingClientRect();
+        const relativeRect = {
+          left: rect.left - gameRect.left,
+          top: rect.top - gameRect.top,
+          right: rect.right - gameRect.left,
+          bottom: rect.bottom - gameRect.top
+        };
+
+        const isGazing = 
+          relativeGazeX >= relativeRect.left &&
+          relativeGazeX <= relativeRect.right &&
+          relativeGazeY >= relativeRect.top &&
+          relativeGazeY <= relativeRect.bottom;
+
+        if (isGazing) {
+          newGazingIndex = idx;
+          item.gazingTime += 16; // ~60fps
+
+          if (item.gazingTime >= GAZE_THRESHOLD && !item.selected) {
+            selectItem(idx);
+            item.selected = true;
+            item.gazingTime = 0;
+          }
+        } else {
+          item.gazingTime = 0;
+        }
+
+        el.classList.toggle('gazing', isGazing);
+      });
+
+      gazingItemIndex = newGazingIndex;
+    }
+
+    function selectItem(idx) {
+      score += 10;
+      scoreEl.textContent = score;
+      
+      const el = document.getElementById('item-' + idx);
+      el.classList.add('selected');
+      
+      // 効果音
+      playChime();
+      
+      // 3秒後にリセット
+      setTimeout(() => {
+        if (el) {
+          el.classList.remove('selected');
+        }
+        items[idx].gazingTime = 0;
+      }, 600);
+    }
+
+    function playChime() {
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const notes = [523.25, 659.25, 783.99];
+      
+      notes.forEach((freq, i) => {
+        const osc = audioContext.createOscillator();
+        const gain = audioContext.createGain();
+        osc.connect(gain);
+        gain.connect(audioContext.destination);
+        
+        osc.frequency.value = freq;
+        osc.type = 'sine';
+        
+        const startTime = audioContext.currentTime + (i * 0.1);
+        gain.gain.setValueAtTime(0.2, startTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, startTime + 0.2);
+        
+        osc.start(startTime);
+        osc.stop(startTime + 0.2);
+      });
+    }
+
+    function startGame() {
+      gameRunning = true;
+      gameStartTime = Date.now();
+      score = 0;
+      scoreEl.textContent = score;
+      createItems();
+      startBtn.disabled = true;
+      statusEl.textContent = 'ゲーム中！';
+      gameLoop();
+    }
+
+    function gameLoop() {
+      if (!gameRunning) return;
+
+      const elapsed = Date.now() - gameStartTime;
+      const remaining = Math.max(0, GAME_DURATION - elapsed);
+      const seconds = Math.ceil(remaining / 1000);
+      timerEl.textContent = seconds + 's';
+
+      if (remaining <= 0) {
+        endGame();
+      } else {
+        requestAnimationFrame(gameLoop);
+      }
+    }
+
+    function endGame() {
+      gameRunning = false;
+      startBtn.disabled = false;
+      statusEl.textContent = `ゲーム終了！スコア: ${score}`;
+    }
+
+    function resetGame() {
+      gameRunning = false;
+      score = 0;
+      scoreEl.textContent = score;
+      timerEl.textContent = '30s';
+      itemsGrid.innerHTML = '';
+      statusEl.textContent = 'リセット完了！';
+      startBtn.disabled = false;
+    }
+
+    startBtn.addEventListener('click', async () => {
+      if (!cameraReady) {
+        startBtn.textContent = '準備中...';
+        startBtn.disabled = true;
+        await initCamera();
+        startBtn.textContent = 'ゲーム開始';
+        startBtn.disabled = false;
+      } else {
+        startGame();
+      }
+    });
+
+    resetBtn.addEventListener('click', resetGame);
+
+    // 初期化
+    console.log('Initializing eye tracking game...');
+    initFaceMesh();
+  </script>
+</body>
+</html>
